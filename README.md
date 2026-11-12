@@ -13,7 +13,7 @@ docker compose up -d --build
 docker compose exec -T backend python -m scripts.seed_demo
 ```
 
-含中文与空格的目录可启动。前端 http://localhost:18230 ，API文档 http://localhost:19230/docs ，PostgreSQL localhost:17730。恰好frontend/backend/worker/db/redis五服务，均有健康检查；backend/worker等待数据库与Redis、frontend等待backend。Redis持久化任务队列，数据库保存来源、快照与结果，backend/worker共享产物卷存完整结果JSON。Nginx `/api/` 去前缀代理后端，无重复API前缀。
+含中文与空格的目录可启动。前端 http://localhost:18230 ，API文档 http://localhost:19230/docs ，PostgreSQL localhost:17730。恰好frontend/backend/worker/db/redis五服务，均有健康检查；backend/worker等待数据库与Redis、frontend等待backend。Redis持久化任务队列，数据库保存来源、快照与结果，backend/worker共享产物卷存完整结果JSON。队列通知只作提示、数据库为权威：worker启动与运行中扫描未领取/租约过期的研究并恢复，重启不丢研究。Nginx `/api/` 去前缀代理后端，无重复API前缀。
 
 | 角色 | 账号 | 密码 | 典型动作 |
 |---|---|---|---|
@@ -61,6 +61,8 @@ p(test) = (1 + # {cal D² >= test D²}) / (m + 1)
 
 结果保存全部150校准分数、100测试D²/p/计数/筛选及200训练分数/支持。单研究最多2000窗口，固定4量；来源为预置三研究。fit_hash覆盖算法/特征定义/训练数值/seed/.8，全输入hash还覆盖全部拆分、cal/test、批注与alpha。自然键排序使输入行序不改结果；改test不改fit或cal但改全输入指纹；改alpha不改评分或p。所有计算在Python worker真实执行。
 
+中断恢复：研究创建时冻结的input_snapshot/alpha/seed就是恢复执行的唯一输入，不重读来源或后来批注。领取用条件UPDATE生成唯一claim_token，结果提交必须仍持有该token且状态为running；旧执行（进程被杀后重新领取、重复投递）晚到时提交被拒，不能覆盖当前有效结果。worker每WORKER_HEARTBEAT_SECONDS续租约，租约WORKER_LEASE_SECONDS到期后重启/其他执行进程可重新领取；排队通知丢失时按数据库queued扫描补投。结果档案在库内提交后写出，缺失/过期由恢复例程用库内result补齐；状态、结果档案与deviation.completed留痕同源。已完成研究及获批补测建议是终态，不参与恢复。
+
 ## 开发与结构
 
 React18.3、ReactRouter7.18.5、TypeScript5.7、Vite6.4.6；Python3.11、FastAPI0.115、SQLAlchemy2、NumPy2.2、SciPy1.15、scikit-learn1.6.1；PostgreSQL16/Redis7/Nginx1.27。
@@ -82,6 +84,6 @@ npm run dev
 
 `backend/src/{routes,controllers,services,models,schemas,middlewares,utils,constants,config}` 按来源、MCD、conformal、运行与审阅职责拆分；`backend/scripts/seed_demo.py`；migration为可选索引升级，首次schema由SQLAlchemy metadata建立，非独立全量DDL。`frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}` 为React应用。
 
-.env参数：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、JWT_SECRET、SEED_DEMO；DATABASE_URL/REDIS_URL由Compose定义。角色枚举在backend/constants/roles与frontend/constants/enums，参与路由鉴权和页面角色显示；运行枚举backend/constants/status与同一前端enums参与worker/StatusBadge；审阅Literal位于backend/schemas/note并在model/service与前端ReviewStatus使用；split Literal位于backend/schemas/window，分析校验与前端SplitRoles保持train/cal/test。
+.env参数：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、JWT_SECRET、SEED_DEMO；可选WORKER_ID、WORKER_LEASE_SECONDS、WORKER_HEARTBEAT_SECONDS、WORKER_RECOVERY_SECONDS；DATABASE_URL/REDIS_URL由Compose定义。角色枚举在backend/constants/roles与frontend/constants/enums，参与路由鉴权和页面角色显示；运行枚举backend/constants/status与同一前端enums参与worker/StatusBadge；审阅Literal位于backend/schemas/note并在model/service与前端ReviewStatus使用；split Literal位于backend/schemas/window，分析校验与前端SplitRoles保持train/cal/test。
 
-测试脚本、关键JSON/CSV、截图及已知差异在同批 `test-artifacts/gb-0026/TESTING.md`。本项目为单worker研究工具，无来源上传、任务崩溃恢复、多worker去重、真实设备或自动告警。清理仅本题：`docker compose down -v --remove-orphans`。MIT License。
+测试脚本、关键JSON/CSV、截图及已知差异在同批 `test-artifacts/gb-0026/TESTING.md`。本项目为单worker研究工具，无来源上传、真实设备或自动告警；支持进程中断恢复，重复投递/多执行进程只认当前有效结果。清理仅本题：`docker compose down -v --remove-orphans`。MIT License。

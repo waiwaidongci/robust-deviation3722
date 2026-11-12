@@ -1,13 +1,13 @@
 import json
 import numpy as np
-from src.config.database import Base,engine,SessionLocal
+from src.config.database import ensure_schema,SessionLocal
 from src.models import User,ArchiveStudy,ClimateWindow,FeatureSpec,DeviationRun,ReviewNote
 from src.utils.security import hash_password
 from src.services.study_service import create_snapshot
 from src.services.analysis_service import analyze_deviation
 
 def seed():
-    Base.metadata.create_all(engine)
+    ensure_schema()
     with SessionLocal() as db:
         for role,name in [('admin','沈棠 · 材料负责人'),('analyst','温砚 · 联合量研究员'),('viewer','秦禾 · 补测阅读者')]:
             email=role+'@shuangleng.demo'

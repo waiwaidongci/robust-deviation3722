@@ -7,8 +7,12 @@ from ..utils.serialize import record
 from .study_service import get_study,create_snapshot
 from .analysis_service import prepare_snapshot
 from .audit_service import log
+from .job_service import JOB_KEY
 queue=Redis.from_url(REDIS_URL,decode_responses=True)
-def list_runs(db):return [record(r) for r in db.query(DeviationRun).order_by(DeviationRun.id.desc())]
+def public(row):
+    """对外记录：保留恢复/完成时间线，但不暴露内部领取令牌。"""
+    data=record(row);data.pop("claim_token",None);return data
+def list_runs(db):return [public(r) for r in db.query(DeviationRun).order_by(DeviationRun.id.desc())]
 def get_run(db,rid):
     row=db.get(DeviationRun,rid)
     if not row:raise HTTPException(404,"偏离研究不存在")
@@ -18,9 +22,11 @@ def create_run(db,data,user):
     try:prepare_snapshot(snapshot)
     except ValueError as e:raise HTTPException(422,str(e))
     row=DeviationRun(**data.model_dump(),input_snapshot=snapshot,owner=user.name);db.add(row);db.flush();log(db,user.email,"deviation.enqueue",row.id);db.commit()
-    try:queue.rpush('deviation:jobs',row.id)
-    except Exception:row.status='failed';row.error='队列不可用，请重提';db.commit();raise HTTPException(503,row.error)
-    return record(row)
+    try:queue.rpush(JOB_KEY,row.id)
+    except Exception as e:
+        # 通知可丢，但研究不能挂死：状态保持 queued，worker 启动/周期恢复会补投并执行。
+        row.error=f"排队通知暂未送达，worker 会自动恢复（{e.__class__.__name__}）";log(db,user.email,"deviation.enqueue.deferred",row.id);db.commit()
+    return public(row)
 def export_run(db,rid):
     row=get_run(db,rid)
     if row.status!='completed' or not db.query(ReviewNote).filter_by(run_id=rid,status='approved').first():raise HTTPException(403,'仅获批完成研究可导出')

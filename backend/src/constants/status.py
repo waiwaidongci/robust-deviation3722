@@ -4,3 +4,4 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+NON_TERMINAL_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING)
